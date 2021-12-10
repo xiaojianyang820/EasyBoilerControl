@@ -122,8 +122,18 @@ class Boiler_HYXS(StandardBoiler):
         PASSWORD = self.config_map['Read_Database_Password']
         DB = self.config_map['Read_Database_Db']
         data_checker = MySQLConnector(host=HOST, port=PORT, user=USER, password=PASSWORD, db=DB)
-        temp_data = data_checker.check_data(SQL_TEXT)
-        boiler_state = temp_data[0][0]
+        for _ in range(4):
+            try:
+                temp_data = data_checker.check_data(SQL_TEXT)
+                boiler_state = temp_data[0][0]
+                temp = boiler_state >= 0
+                break
+            except Exception as e:
+                self.logger.to_error('无法查询锅炉当前的状态，等待60秒之后重试！')
+                time.sleep(60)
+        else:
+            boiler_state = 20
+
         if boiler_state > 0:
             boiler_start_or_stop = 1
         else:

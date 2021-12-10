@@ -63,6 +63,50 @@ class AbsBuilding(object):
         cur_q = cur_p * int(self.config_map['Area']) * 60 * int(self.config_map['Control_Interval'])
         info = '本控制周期需要总热量（兆焦）为：%d' % (cur_q/1000000)
         self.logger.to_info(info)
+        # 如果该项目需要设定最低供水温度，则计算额外的能耗需求
+        is_control_secnet_gst_db = self.config_map['Is_Control_Sec_Net_GST_DB']
+        min_cur_q = cur_q
+        if is_control_secnet_gst_db == 'Y':
+            # 查询当前的回水温度和流量
+            control_interval = int(self.config_map['Control_Interval'])
+            # 获取当前的时间
+            cur_clock = self._check_cur_time()
+            start_clock = cur_clock - datetime.timedelta(0, 60 * control_interval)
+            cur_clock_str = datetime.datetime.strftime(cur_clock, '%Y-%m-%d %H:%M:%S')
+            start_clock_str = datetime.datetime.strftime(start_clock, '%Y-%m-%d %H:%M:%S')
+            # 二次网数据存储表名
+            secnet_table = self.config_map['SecNet_Table']
+            # 二次网供水温度
+            secnet_gst_name = self.config_map['SecNet_GST']
+            # 二次网回水温度
+            secnet_hst_name = self.config_map['SecNet_HST']
+            # 二次网流量
+            secnet_flow = float(self.config_map['SecNet_Flow'])
+
+            while True:
+                try:
+                    SQL_Templet = 'SELECT avg(%s), avg(%s) FROM %s WHERE create_time > "%s" and create_time <= "%s"'
+                    SQL_TEXT = SQL_Templet % (
+                    secnet_gst_name, secnet_hst_name, secnet_table, start_clock_str, cur_clock_str)
+                    temp_data = self.data_checker.check_data(SQL_TEXT)
+                    secnet_gst, secnet_hst = temp_data[0]
+                    break
+                except Exception as e:
+                    print(e)
+                    self.logger.to_error('无法正常查询系统的供回水温度，等待20秒后重新查询')
+                    time.sleep(20)
+            # 要求的最低供水温度
+            control_secnet_gst_db = float(self.config_map['Control_Sec_Net_GST_DB'])
+            # 相应的时间区间
+            control_secnet_gst_hours = self.config_map['Control_Sec_Net_GST_Hours']
+            control_secnet_gst_hours = [int(i) for i in
+                                        control_secnet_gst_hours.split(',') if i.strip() != ""]
+            if cur_clock.hour in control_secnet_gst_hours and secnet_gst < control_secnet_gst_db-0.3:
+                min_cur_q = (control_secnet_gst_db - secnet_hst) * secnet_flow * 1000 * 4200 * (int(self.config_map['Control_Interval'])/60)
+                self.logger.to_info('当前时段需要保证最低供水温度，所以供热量不低于：%d' % (min_cur_q / 1000000))
+            else:
+                min_cur_q = cur_q
+        cur_q = max(min_cur_q, cur_q)
         return cur_p, cur_q / 1000000
 
     @abstractmethod
@@ -143,7 +187,7 @@ class StandardBuilding(AbsBuilding):
         # 二次网流量
         secnet_flow = float(self.config_map['SecNet_Flow'])
 
-        while True:
+        for _ in range(3):
             try:
                 SQL_Templet = 'SELECT avg(%s), avg(%s) FROM %s WHERE create_time > "%s" and create_time <= "%s"'
                 SQL_TEXT = SQL_Templet % (secnet_gst_name, secnet_hst_name, secnet_table, start_clock_str, cur_clock_str)
@@ -155,15 +199,21 @@ class StandardBuilding(AbsBuilding):
                 print(e)
                 self.logger.to_error('无法正常查询系统的供回水温度，等待20秒后重新查询')
                 time.sleep(20)
-
-        run_p = run_q / (int(self.config_map['Area']) * 60 * int(self.config_map['Control_Interval']))
-        # 如果二次网供水温度到达上限位置，则降低10%的供热量
-        if secnet_gst > float(self.config_map['Sec_Net_Temp_Upper_Bound']):
-            self.logger.to_info('当前的二次网温度为%.1f，已经超过上限，故降低百分之20的供热负荷' % secnet_gst)
-            run_p_s = run_p * 1.2
-            self.logger.to_info('将运行负荷从 %.1f 调整为 %.1f' % (run_p, run_p_s))
-            run_p = run_p_s
-        return run_p
+        else:
+            secnet_gst = None
+            secnet_hst = None
+            run_q = 0
+        if secnet_gst:
+            run_p = run_q / (int(self.config_map['Area']) * 60 * int(self.config_map['Control_Interval']))
+            # 如果二次网供水温度到达上限位置，则降低10%的供热量
+            if secnet_gst > float(self.config_map['Sec_Net_Temp_Upper_Bound']):
+                self.logger.to_info('当前的二次网温度为%.1f，已经超过上限，故降低百分之20的供热负荷' % secnet_gst)
+                run_p_s = run_p * 1.2
+                self.logger.to_info('将运行负荷从 %.1f 调整为 %.1f' % (run_p, run_p_s))
+                run_p = run_p_s
+            return run_p
+        else:
+            return 10
 
     def design_error_evaluate(self) -> tuple:
         # 获取当前的时间
@@ -202,6 +252,7 @@ class StandardBuilding(AbsBuilding):
             SQL_TEXT = SQL_Templet % (self.config_map['WeatherStation_Table'], start_time, end_time, self.config_map['WeatherStation_ID'])
             temp_data = self.data_checker.check_data(SQL_TEXT)
             temp, hr, lux, wind_speed = temp_data[0]
+            a = min(float(temp), 17.5)
         except:
             self.logger.to_error('当前气象站数据无法查询')
             temp = 0.0
@@ -267,14 +318,19 @@ class StandardBuilding(AbsBuilding):
         base_url = 'http://47.94.209.71/600ly-ctrl/api/v1/cmdCenter/ctrlTarget/getAll.json?model_id=%s&access_token=%s'
         target_url = base_url % (MODEL_ID, ACCESS_TOKEN)
         check_json = {'collectionTime': cur_time}
-        res = requests.post(target_url, json=check_json)
-        res_json = json.loads(res.content.decode('utf-8'))
-        #print(res_json)
-        for area in res_json['data']['targetList']:
-            if area['areaName'] == self.config_map['Area_Name']:
-                indoor_temp = area['target']['indoorAvgTemp']
-                break
-        else:
+        try:
+            res = requests.post(target_url, json=check_json)
+            res_json = json.loads(res.content.decode('utf-8'))
+            for area in res_json['data']['targetList']:
+                if area['areaName'] == self.config_map['Area_Name']:
+                    indoor_temp = area['target']['indoorAvgTemp']
+                    break
+            else:
+                indoor_temp = float(self.config_map['Random_Set_Indoor_Temp'])
+                self.logger.to_error('查询 %s 平均温度失败，将平均温度暂时设定为%.1f度' % (self.config_map['Area_Name'],
+                                                                       indoor_temp))
+        except Exception as e:
+            print(e)
             indoor_temp = float(self.config_map['Random_Set_Indoor_Temp'])
             self.logger.to_error('查询 %s 平均温度失败，将平均温度暂时设定为%.1f度' % (self.config_map['Area_Name'],
                                                                    indoor_temp))

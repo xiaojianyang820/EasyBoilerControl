@@ -26,7 +26,7 @@ class Boiler_XHLY(StandardBoiler):
         # 锅炉最高设定温度
         MAX_GS_T = 85
         # 锅炉最低设定温度
-        MIN_GS_T = 34
+        MIN_GS_T = 36
         # 查询当前的回水温度
         while True:
             try:
@@ -45,7 +45,7 @@ class Boiler_XHLY(StandardBoiler):
         # 目前需要的一次网温差为：
         fir_net_temp_up = (total_q * 1000000) / (fir_net_flew * adj_coef * 1000 * 4200)
         self.logger.to_info('目前一次网需要升温 %.1f 摄氏度' % fir_net_temp_up)
-        if fir_net_temp_up < 1.13:
+        if fir_net_temp_up < 1.3 and np.random.rand() > 0.4:
             # 这种情况下关闭全部锅炉
             self._start_or_stop_boiler(0, 3)
             self._start_or_stop_boiler(0, 1)

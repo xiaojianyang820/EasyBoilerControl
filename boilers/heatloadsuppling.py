@@ -111,7 +111,7 @@ class StandardBoiler(AbsBoiler):
             info = '关闭%d#锅炉' % boiler_id
         self.logger.to_info(info)
         self._post_control(control_JSON)
-        time.sleep(3)
+        time.sleep(10)
 
     def _set_boiler(self, set_value, boiler_id):
         control_JSON = [

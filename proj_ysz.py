@@ -47,13 +47,13 @@ class Boiler_YSZ(StandardBoiler):
                 else:
                     add_fm_kd = 0 if dtf_kd > 10 else 10
             else:
-                if temp_DP < 8.5:
+                if temp_DP < 8.8:
                     add_fm_kd = 0 if dtf_kd > 35 else 10
-                elif temp_DP < 9.2:
+                elif temp_DP < 9.5:
                     add_fm_kd = 0 if dtf_kd > 25 else 10
-                elif temp_DP > 11.5:
+                elif temp_DP > 11.8:
                     add_fm_kd = -20
-                elif temp_DP > 9.7:
+                elif temp_DP > 10.0:
                     add_fm_kd = -10
                 else:
                     add_fm_kd = -5
