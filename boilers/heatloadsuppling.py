@@ -76,8 +76,18 @@ class StandardBoiler(AbsBoiler):
                        'hgg0DsyyhwEo96mCtlaWHe2DY4QbyUFUE169oU7IGCKdAAAJFN'
         targetURL = 'http://47.94.209.71/600ly-ctrl/cmdCenter/sendBatchCmd/v3.json?access_token=%s&model_id=%s'
         targetURL = targetURL % (access_token, self.config_map['MODEL_ID'])
-        res = requests.post(targetURL, json=control_json)
-        self._validateRES(res)
+        for _ in range(3):
+            try:
+                res = requests.post(targetURL, json=control_json)
+                self._validateRES(res)
+                break
+            except Exception as e:
+                print(e)
+                self.logger.to_error('发送控制指令失败，等待60秒后重试')
+                time.sleep(60)
+        else:
+            self.logger.to_error('发送控制指令失败三次，放弃本次指令发送')
+            res = None
 
     def _validateRES(self, res):
         try:

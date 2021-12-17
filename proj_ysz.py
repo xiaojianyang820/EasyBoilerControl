@@ -60,7 +60,7 @@ class Boiler_YSZ(StandardBoiler):
         # 设定上一轮次的大棚内温度
         if not hasattr(self, '_last_DP_temp'):
             self._last_DP_temp = 12
-        if temp_DP > self._last_DP_temp + 0.5:
+        if temp_DP > self._last_DP_temp + 0.5 and self._last_DP_temp > 8.0:
             add_fm_kd = -35
         # 如果大棚温度开始明显上升，那么就停止增开阀门
         elif temp_DP > self._last_DP_temp+0.1:
@@ -223,8 +223,16 @@ class Boiler_YSZ(StandardBoiler):
         indoor_temp_list = []
         for area in res_json['data']['targetList']:
             if area['areaName'] in ['东大棚', '西大棚']:
-                indoor_temp = area['target']['indoorAvgTemp']
+                try:
+                    indoor_temp = area['target']['indoorAvgTemp']
+                except Exception as e:
+                    print(e)
+                    if len(indoor_temp_list) > 0:
+                        indoor_temp = indoor_temp_list[-1]
+                    else:
+                        indoor_temp = 8.5
                 indoor_temp_list.append(indoor_temp)
+
         if len(indoor_temp_list) > 0:
             return np.mean(indoor_temp_list)
         else:
